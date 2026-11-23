@@ -69,7 +69,8 @@
   }
 
   function cacheKey(kind, place) {
-    return "tenki." + kind + ".v1." + Number(place.lat).toFixed(3) + "." + Number(place.lon).toFixed(3);
+    const version = kind === "forecast" ? "v2" : "v1";
+    return "tenki." + kind + "." + version + "." + Number(place.lat).toFixed(3) + "." + Number(place.lon).toFixed(3);
   }
 
   function readCache(key, ttl) {
@@ -302,7 +303,7 @@
         periodButton("fortnight", "2週間"),
         periodButton("ninety", "90日")
       ]),
-      el("p", { class: "muted note" }, "棒が長いほど降水確率が高くなります。雨量は1日の合計です。17日目以降は平年の値です。"),
+      el("p", { class: "muted note" }, "棒が長いほど降水確率が高くなります。雨量は1時間あたりのミリです。17日目以降は平年の値です。"),
       el("div", { id: "status", role: "status" }),
       el("div", { id: "forecast" }),
       el("footer", { class: "foot" }, [
@@ -524,10 +525,27 @@ document.querySelectorAll(".periods button").forEach(function (button) {
     return box;
   }
 
-  function rainMetric(mm) {
-    const box = metric("雨量", data.mmLabel(mm) || "—");
-    if (mm != null && mm >= 1) box.classList.add("has-rain");
-    return box;
+  function mmNumber(value) {
+    if (value == null) return "—";
+    if (value < 0.05) return "0";
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  }
+
+  function hourlyRates(hours) {
+    if (!hours || !hours.length) {
+      return el("p", { class: "muted rate-none" }, "1時間あたりの雨量は、この発表にはありません");
+    }
+    return el("div", { class: "rates" }, [
+      el("p", { class: "metric-label" }, "1時間あたりの雨量"),
+      el("ul", { class: "rates-row" }, hours.map(function (item) {
+        return el("li", { class: item.mm >= 1 ? "rate wet" : "rate" }, [
+          el("span", { class: "num rate-hour" }, String(Number(item.hour)) + "時"),
+          el("span", { class: "num rate-mm" }, mmNumber(item.mm)),
+          el("span", { class: "rate-unit" }, "mm/時")
+        ]);
+      }))
+    ]);
   }
 
   function tempMetric(value) {
@@ -565,7 +583,8 @@ document.querySelectorAll(".periods button").forEach(function (button) {
   function sourceRow(source, day, withWind) {
     const value = day.sources[source[0]];
     const row = el("li", { class: "source" });
-    if (!value || (value.sky == null && value.hi == null && value.lo == null && value.pop == null && value.rainMm == null)) {
+    const hasHours = value && value.hours && value.hours.length;
+    if (!value || (value.sky == null && value.hi == null && value.lo == null && value.pop == null && value.rainMm == null && !hasHours)) {
       row.classList.add("is-empty");
       row.append(
         el("span", { class: "source-name" }, source[1]),
@@ -583,9 +602,9 @@ document.querySelectorAll(".periods button").forEach(function (button) {
     row.append(el("div", { class: "source-top" }, [weatherIcon(kind), title]));
     row.append(el("div", { class: "metrics" }, [
       popMetric(value.pop),
-      rainMetric(value.rainMm),
       tempMetric(value)
     ]));
+    row.append(hourlyRates(value.hours));
     if (withWind && value.wind) row.append(el("p", { class: "wind" }, "風 " + value.wind));
     return row;
   }
@@ -608,8 +627,8 @@ document.querySelectorAll(".periods button").forEach(function (button) {
         weatherIcon(kind),
         el("span", { class: "hour-sky" }, skyShort(hour.sky)),
         el("span", { class: "num hour-temp" }, hour.temp == null ? "—" : Math.round(hour.temp) + "°"),
-        el("span", { class: hour.rainMm >= 1 ? "num hour-rain" : "num" }, data.mmLabel(hour.rainMm) || "—"),
-        el("span", { class: "metric-label" }, "雨量")
+        el("span", { class: hour.rainMm >= 1 ? "num hour-rain" : "num" }, mmNumber(hour.rainMm)),
+        el("span", { class: "metric-label" }, "mm/時")
       ]);
     })));
     return block;

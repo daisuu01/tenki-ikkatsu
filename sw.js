@@ -1,4 +1,4 @@
-const CACHE = "tenki-shell-v3";
+const CACHE = "tenki-shell-v4";
 
 self.addEventListener("install", function (event) {
   event.waitUntil(caches.open(CACHE).then(function (cache) {

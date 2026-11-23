@@ -240,6 +240,33 @@ function at(daily, key, index) {
   return list ? list[index] : null;
 }
 
+function addHourlyRain(days, hourly) {
+  const series = {
+    msm: hourly.precipitation_jma_msm,
+    ecmwf: hourly.precipitation_ecmwf_ifs,
+    gfs: hourly.precipitation_gfs_seamless
+  };
+  Object.keys(series).forEach(function (key) {
+    const values = series[key];
+    if (!values) return;
+    const byDate = {};
+    hourly.time.forEach(function (time, index) {
+      const mm = numberOrNull(values[index]);
+      if (mm == null) return;
+      const date = time.slice(0, 10);
+      if (!byDate[date]) byDate[date] = [];
+      byDate[date].push({ hour: time.slice(11, 13), mm: mm });
+    });
+    Object.keys(byDate).forEach(function (date) {
+      const current = (days[date] && days[date][key]) || {
+        sky: null, hi: null, lo: null, pop: null, rainMm: null, wind: null
+      };
+      current.hours = byDate[date];
+      putDaily(days, date, key, current);
+    });
+  });
+}
+
 function readModel(daily, model, index) {
   const sky = wmoSky(at(daily, "weather_code_" + model, index));
   const hi = numberOrNull(at(daily, "temperature_2m_max_" + model, index));
@@ -278,6 +305,7 @@ function readModel(daily, model, index) {
       putDaily(days, date, "ecmwf", readModel(data.daily, "ecmwf_ifs", index));
       putDaily(days, date, "gfs", readModel(data.daily, "gfs_seamless", index));
     });
+    addHourlyRain(days, data.hourly);
     const hourly = data.hourly.time.map(function (time, index) {
       return {
         time: time,

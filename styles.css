@@ -243,7 +243,7 @@ input[type="text"] {
 
 .metrics {
   display: grid;
-  grid-template-columns: 1.2fr 0.9fr 1.15fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
@@ -277,6 +277,30 @@ input[type="text"] {
 .pop.is-wet .pop-fill { background: var(--wet); }
 .pop.is-wet .metric-value { color: var(--wet); }
 .metric.has-rain .metric-value { color: var(--wet); }
+
+.rates { display: grid; gap: 6px; }
+.rate-none { font-size: 13px; }
+.rates-row {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.rate {
+  flex: 0 0 4.8rem;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.rate-hour, .rate-unit { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.rate-mm { font-size: 16px; font-weight: 500; }
+.rate.wet { background: var(--selected); }
+.rate.wet .rate-mm { color: var(--wet); }
 
 .wind { margin: 0; font-size: 13px; color: var(--muted); }
 
