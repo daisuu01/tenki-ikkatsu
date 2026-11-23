@@ -170,7 +170,7 @@
       el("span", { class: "place-title" }, place.title)
     ]);
     if (range) {
-      button.append(el("span", { class: "place-pop" }, "今日の降水 " + range + (spread >= 20 ? "（差あり）" : "")));
+      button.append(el("span", { class: spread >= 20 ? "place-pop warn" : "place-pop" }, "今日の降水確率 " + range + (spread >= 20 ? "（差あり）" : "")));
     }
     button.dataset.id = place.id;
     return button;
@@ -302,7 +302,7 @@
         periodButton("fortnight", "2週間"),
         periodButton("ninety", "90日")
       ]),
-      el("p", { class: "muted note" }, "気象庁発表は7日先まで。気象庁MSMは約4日先まで。ECMWFは15日先、GFSは16日先まで。17日目以降は平年の統計値です。MSMの右端は降水確率ではなく降水量です。"),
+      el("p", { class: "muted note" }, "棒が長いほど降水確率が高くなります。雨量は1日の合計です。17日目以降は平年の値です。"),
       el("div", { id: "status", role: "status" }),
       el("div", { id: "forecast" }),
       el("footer", { class: "foot" }, [
@@ -447,15 +447,108 @@ document.querySelectorAll(".periods button").forEach(function (button) {
     return { date: date, index: index, sources: state.bundle.days[date] || { jma: null, msm: null, ecmwf: null, gfs: null } };
   }
 
+  function skyKind(text) {
+    const sky = text || "";
+    if (sky.indexOf("雪") >= 0) return "snow";
+    if (sky.indexOf("雷") >= 0 || sky.indexOf("雨") >= 0) return "rain";
+    if (sky.indexOf("曇") >= 0 && sky.indexOf("晴") >= 0) return "mix";
+    if (sky.indexOf("曇") >= 0 || sky.indexOf("霧") >= 0) return "cloud";
+    if (sky.indexOf("晴") >= 0) return "sun";
+    return "unknown";
+  }
+
+  function skyShort(text) {
+    const kind = skyKind(text);
+    if (kind === "rain") return "雨";
+    if (kind === "snow") return "雪";
+    if (kind === "sun") return "晴";
+    if (kind === "cloud") return "曇";
+    if (kind === "mix") return "晴曇";
+    return "—";
+  }
+
+  function svgEl(name, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", name);
+    Object.keys(attrs).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    return node;
+  }
+
+  function weatherIcon(kind) {
+    const svg = svgEl("svg", { viewBox: "0 0 24 24", class: "wx", "aria-hidden": "true" });
+    if (kind === "sun") {
+      svg.append(svgEl("circle", { cx: "12", cy: "12", r: "3.2", fill: "currentColor" }));
+      ["M12 3.2v2.4", "M12 18.4v2.4", "M3.2 12h2.4", "M18.4 12h2.4", "M6.1 6.1l1.7 1.7", "M16.2 16.2l1.7 1.7", "M17.9 6.1l-1.7 1.7", "M7.8 16.2l-1.7 1.7"].forEach(function (d) {
+        svg.append(svgEl("path", { d: d, fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round" }));
+      });
+      return svg;
+    }
+    const cloud = "M7.2 16.2h10.2a3.2 3.2 0 0 0 .3-6.4 4.3 4.3 0 0 0-8.2 1.2 2.8 2.8 0 0 0-2.3 5.2z";
+    if (kind === "cloud" || kind === "unknown") {
+      svg.append(svgEl("path", { d: cloud, fill: "currentColor" }));
+      return svg;
+    }
+    if (kind === "mix") {
+      svg.append(svgEl("circle", { cx: "17", cy: "6.5", r: "2.1", fill: "currentColor" }));
+      svg.append(svgEl("path", { d: cloud, fill: "currentColor" }));
+      return svg;
+    }
+    svg.append(svgEl("path", { d: "M7 13.5h10.4a3 3 0 0 0 .2-6 4 4 0 0 0-7.6 1.1A2.6 2.6 0 0 0 7 13.5z", fill: "currentColor" }));
+    const marks = kind === "snow"
+      ? ["M9 16.2v3.2", "M12 16.2v3.2", "M15 16.2v3.2"]
+      : ["M9 16.4v3", "M12 16.4v3", "M15 16.4v3"];
+    marks.forEach(function (d) {
+      svg.append(svgEl("path", { d: d, fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round" }));
+    });
+    return svg;
+  }
+
+  function metric(label, value) {
+    return el("div", { class: "metric" }, [
+      el("span", { class: "metric-value num" }, value),
+      el("span", { class: "metric-label" }, label)
+    ]);
+  }
+
+  function popMetric(pop) {
+    const band = pop == null ? "" : pop >= 60 ? "is-wet" : pop >= 30 ? "is-mid" : "is-dry";
+    const box = el("div", { class: "metric pop " + band });
+    box.append(el("span", { class: "metric-value num" }, pop == null ? "—" : pop + "%"));
+    box.append(el("span", { class: "metric-label" }, "降水確率"));
+    if (pop != null) {
+      const track = el("span", { class: "pop-track", "aria-hidden": "true" });
+      const fill = el("span", { class: "pop-fill" });
+      fill.style.width = Math.max(0, Math.min(100, pop)) + "%";
+      track.append(fill);
+      box.append(track);
+    }
+    return box;
+  }
+
+  function rainMetric(mm) {
+    const box = metric("雨量", data.mmLabel(mm) || "—");
+    if (mm != null && mm >= 1) box.classList.add("has-rain");
+    return box;
+  }
+
+  function tempMetric(value) {
+    const hi = value.hi == null ? "—" : Math.round(value.hi) + "°";
+    const lo = value.lo == null ? "—" : Math.round(value.lo) + "°";
+    const numbers = el("span", { class: "metric-value num temps" }, [
+      el("span", { class: "hi" }, "高 " + hi),
+      el("span", { class: "lo" }, "低 " + lo)
+    ]);
+    return el("div", { class: "metric" }, [numbers, el("span", { class: "metric-label" }, "気温")]);
+  }
+
   function dayArticle(index, withWind) {
     const day = dayRecord(index);
     const spread = data.spreadOf(day.sources);
     const head = [el("h3", null, dayTitle(day.date, index))];
-    if (spread >= 20) head.push(el("p", null, "降水確率の差 " + spread + "ポイント"));
+    if (spread >= 20) head.push(el("p", { class: "spread-badge" }, "降水確率が" + spread + "ポイント離れています"));
     const rows = SOURCES.map(function (source) {
       return sourceRow(source, day, withWind);
     });
-    return el("article", { class: spread >= 20 ? "day split" : "day" }, [
+    return el("article", { class: "day" }, [
       el("div", { class: "day-head" }, head),
       el("ul", { class: "sources" }, rows)
     ]);
@@ -471,25 +564,30 @@ document.querySelectorAll(".periods button").forEach(function (button) {
 
   function sourceRow(source, day, withWind) {
     const value = day.sources[source[0]];
-    const row = el("li", { class: "source" }, [el("span", { class: "source-name" }, source[1])]);
-    if (!value || (value.sky == null && value.hi == null && value.lo == null && value.pop == null)) {
-      row.append(el("span", { class: "missing" }, day.index >= source[3] ? source[2] : "データなし"));
+    const row = el("li", { class: "source" });
+    if (!value || (value.sky == null && value.hi == null && value.lo == null && value.pop == null && value.rainMm == null)) {
+      row.classList.add("is-empty");
+      row.append(
+        el("span", { class: "source-name" }, source[1]),
+        el("span", { class: "missing" }, day.index >= source[3] ? source[2] : "この日のデータはありません")
+      );
       return row;
     }
-    const bits = [value.sky || "—"];
-    if (value.reliability) bits.push("信頼度" + value.reliability);
-    row.append(el("span", { class: "sky" }, bits.join(" ")));
-    row.append(el("span", { class: "num" }, tempText(value)));
-    row.append(el("span", { class: "num" }, value.pop != null ? value.pop + "%" : (data.mmLabel(value.rainMm) || "—")));
-    if (withWind && value.wind) row.append(el("span", { class: "wind" }, value.wind));
+    const kind = skyKind(value.sky);
+    row.classList.add("kind-" + kind);
+    const title = el("div", { class: "source-copy" }, [
+      el("span", { class: "source-name" }, source[1]),
+      el("span", { class: "sky" }, value.sky || "天気の表示なし")
+    ]);
+    if (value.reliability) title.append(el("span", { class: "trust" }, "信頼度" + value.reliability));
+    row.append(el("div", { class: "source-top" }, [weatherIcon(kind), title]));
+    row.append(el("div", { class: "metrics" }, [
+      popMetric(value.pop),
+      rainMetric(value.rainMm),
+      tempMetric(value)
+    ]));
+    if (withWind && value.wind) row.append(el("p", { class: "wind" }, "風 " + value.wind));
     return row;
-  }
-
-  function tempText(value) {
-    if (value.hi == null && value.lo == null) return "—";
-    const hi = value.hi == null ? "—" : Math.round(value.hi) + "°";
-    const lo = value.lo == null ? "—" : Math.round(value.lo) + "°";
-    return hi + " / " + lo;
   }
 
   function hourlyBlock() {
@@ -504,12 +602,14 @@ document.querySelectorAll(".periods button").forEach(function (button) {
       return block;
     }
     block.append(el("ul", { class: "hours" }, hours.map(function (hour) {
-      return el("li", { class: "hour" }, [
-        el("span", { class: "num" }, hour.time.slice(11, 13) + "時"),
-        el("span", { class: "future" }, "これから"),
-        el("span", null, hour.sky || "—"),
-        el("span", { class: "num" }, hour.temp == null ? "—" : Math.round(hour.temp) + "°"),
-        el("span", { class: "num" }, data.mmLabel(hour.rainMm) || "—")
+      const kind = skyKind(hour.sky);
+      return el("li", { class: "hour kind-" + kind }, [
+        el("span", { class: "num hour-time" }, hour.time.slice(11, 13) + "時"),
+        weatherIcon(kind),
+        el("span", { class: "hour-sky" }, skyShort(hour.sky)),
+        el("span", { class: "num hour-temp" }, hour.temp == null ? "—" : Math.round(hour.temp) + "°"),
+        el("span", { class: hour.rainMm >= 1 ? "num hour-rain" : "num" }, data.mmLabel(hour.rainMm) || "—"),
+        el("span", { class: "metric-label" }, "雨量")
       ]);
     })));
     return block;
@@ -543,7 +643,7 @@ document.querySelectorAll(".periods button").forEach(function (button) {
     for (let date = gridStart; date <= gridEnd; date = data.addDays(date, 1)) {
       const inRange = date >= rangeStart && date <= rangeEnd && date.slice(0, 7) === month;
       if (!inRange) {
-        grid.append(el("div", { class: "cell out", role: "gridcell", "aria-label": "このマスは表示中の月の対象外です" }, "範囲外"));
+        grid.append(el("div", { class: "cell out", role: "gridcell", "aria-label": "このマスは表示中の月の対象外です" }));
         continue;
       }
       grid.append(calendarCell(date));
@@ -576,9 +676,9 @@ document.querySelectorAll(".periods button").forEach(function (button) {
       edge ? el("p", { class: "muted" }, edge) : null,
       grid,
       el("ul", { class: "legend" }, [
-        el("li", null, [el("span", { class: "key" }, "14/5"), "最高/最低（℃）。16日先まではECMWFの例"]),
-        el("li", null, [el("span", { class: "key split-key" }, "差"), "降水確率が20ポイント以上離れている日"]),
-        el("li", null, [el("span", { class: "key stat-key" }, "統計"), "17日目以降の平年値。同じ日付の直近10年"])
+        el("li", null, [el("span", { class: "key" }, "%"), "その日のいちばん高い降水確率。下の数字は最高/最低（℃）"]),
+        el("li", null, [el("span", { class: "key split-key" }, "差"), "出所の降水確率が20ポイント以上離れている日"]),
+        el("li", null, [el("span", { class: "key stat-key" }, "平年"), "17日目以降。同じ日付の直近10年"])
       ])
     ]);
   }
@@ -590,26 +690,32 @@ document.querySelectorAll(".periods button").forEach(function (button) {
     if (index <= 15) {
       const sources = (state.bundle.days[date]) || {};
       const lead = sources.ecmwf || sources.gfs || sources.msm || sources.jma;
+      const pops = ["jma", "ecmwf", "gfs"].map(function (key) {
+        return sources[key] && sources[key].pop != null ? sources[key].pop : null;
+      }).filter(function (pop) { return pop != null; });
+      const pop = pops.length ? Math.max.apply(null, pops) : null;
       const spread = data.spreadOf(sources);
-      cell.className = spread >= 20 ? "cell split" : "cell";
-      cell.append(el("span", null, dayNumber));
+      const band = pop == null ? "" : pop >= 60 ? "is-wet" : pop >= 30 ? "is-mid" : "is-dry";
+      cell.className = "cell " + band + (spread >= 20 ? " split" : "");
+      cell.append(el("span", { class: "cell-date" }, dayNumber));
+      cell.append(el("span", null, skyShort(lead && lead.sky)));
+      cell.append(el("span", { class: "num cell-pop" }, pop == null ? "—" : pop + "%"));
       cell.append(el("span", { class: "num" }, lead && lead.hi != null ? Math.round(lead.hi) + "/" + Math.round(lead.lo) : "—"));
-      if (spread >= 20) cell.append(el("span", { class: "num" }, "差" + spread));
-      cell.setAttribute("aria-label", Number(date.slice(5, 7)) + "月" + dayNumber + "日の数値予報。降水確率の差は" + spread + "ポイント。");
+      if (spread >= 20) cell.append(el("span", { class: "cell-gap" }, "差"));
+      cell.setAttribute("aria-label", Number(date.slice(5, 7)) + "月" + dayNumber + "日の数値予報。降水確率の最大は" + (pop == null ? "不明" : pop + "%") + "。差は" + spread + "ポイント。");
       return cell;
     }
     const climate = state.climate && state.climate[date.slice(5)];
     cell.className = "cell stat";
-    cell.append(el("span", null, dayNumber));
+    cell.append(el("span", { class: "cell-date" }, dayNumber));
+    cell.append(el("span", null, "平年"));
     if (!climate) {
-      cell.append(el("span", null, "統計"));
-      cell.setAttribute("aria-label", Number(date.slice(5, 7)) + "月" + dayNumber + "日の統計値はまだ取得できていません。");
+      cell.setAttribute("aria-label", Number(date.slice(5, 7)) + "月" + dayNumber + "日の平年値はまだ取得できていません。");
       return cell;
     }
     cell.append(el("span", { class: "num" }, climate.hi + "/" + climate.lo));
     cell.append(el("span", { class: "num" }, climate.rain));
-    cell.append(el("span", null, "統計"));
-    cell.setAttribute("aria-label", Number(date.slice(5, 7)) + "月" + dayNumber + "日は統計値。平年の最高" + climate.hi + "度、最低" + climate.lo + "度、" + climate.rain + "。");
+    cell.setAttribute("aria-label", Number(date.slice(5, 7)) + "月" + dayNumber + "日は平年値。最高" + climate.hi + "度、最低" + climate.lo + "度、" + climate.rain + "。");
     return cell;
   }
 
